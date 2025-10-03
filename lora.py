@@ -79,18 +79,19 @@ def lora_packet(BW, OSF, SF, k1, k2, n_pr, IH, CR, MAC_CRC, SRC, DST, SEQNO, MES
 
 
 def lora_header_init(SF, IH):
-    if (IH):
-        n_sym_hdr = np.uint16(0)
-        n_bits_hdr = np.uint16(0)
+    SF = int(SF)
+    if IH:
+        n_sym_hdr = 0
+        n_bits_hdr = 0
     else:
         # interleaving block size, respectively for header & payload
-        CR_hdr = np.uint16(4)
-        DE_hdr = np.uint16(1)
-        n_sym_hdr = 4 + CR_hdr
-        intlv_hdr_size = (SF - 2 * DE_hdr) * (4 + CR_hdr)
-        n_bits_hdr = np.uint16(intlv_hdr_size * 4 / (4 + CR_hdr) - 20)
+        CR_hdr = 4
+        DE_hdr = 1
+        n_sym_hdr = int(4 + CR_hdr)
+        intlv_hdr_size = int((SF - 2 * DE_hdr) * (4 + CR_hdr))
+        n_bits_hdr = int(intlv_hdr_size * 4 / (4 + CR_hdr) - 20)
 
-    return n_sym_hdr, n_bits_hdr
+    return int(n_sym_hdr), int(n_bits_hdr)
 
 
 # function [k_hdr,payload_ofs] =
@@ -102,17 +103,17 @@ def lora_header(SF, LENGTH, CR, MAC_CRC, PAYLOAD, payload_ofs):
                            [0, 0, 1, 1, 1],
                            [0, 1, 0, 1, 1]))
 
-    CR_hdr = np.uint8(4)
+    CR_hdr = 4
     Hamming_hdr = np.array(([1, 0, 1, 1], [1, 1, 1, 0], [1, 1, 0, 1], [0, 1, 1, 1]), dtype=np.uint8)
-    n_sym_hdr = 4 + CR_hdr
-    DE_hdr = np.uint8(1)
-    PPM = SF - 2 * DE_hdr
+    n_sym_hdr = int(4 + CR_hdr)
+    DE_hdr = 1
+    PPM = int(SF) - 2 * int(DE_hdr)
     gray_hdr = gray_lut(PPM)[0]
-    intlv_hdr_size = PPM * n_sym_hdr
+    intlv_hdr_size = int(PPM * n_sym_hdr)
 
     # header (20 bit)
-    LENGTH_bits = num2binary(LENGTH, 8)
-    CR_bits = num2binary(CR, 3)
+    LENGTH_bits = num2binary(int(LENGTH), 8)
+    CR_bits = num2binary(int(CR), 3)
     hdr = np.concatenate((LENGTH_bits[np.arange(3, -1, -1, dtype=np.uint8)],
                           LENGTH_bits[np.arange(7, 3, -1, dtype=np.uint8)], np.array([MAC_CRC], dtype=np.uint8),
                           CR_bits[np.arange(2, -1, -1, dtype=np.uint8)], np.zeros(8, dtype=np.uint8)))
@@ -140,16 +141,18 @@ def lora_header(SF, LENGTH, CR, MAC_CRC, PAYLOAD, payload_ofs):
     S = np.zeros((4 + CR_hdr, PPM), dtype=np.uint8)
     for ii in range(0, PPM):
         for jj in range(0, 4 + CR_hdr):
-            S[jj, np.mod(ii + jj, PPM)] = C[ii, jj]
+            S[jj, (ii + jj) % PPM] = C[ii, jj]
 
     bits_hdr = np.reshape(S.transpose(), intlv_hdr_size, order='F')
 
     # bit to symbol mapping
     k_hdr = np.zeros(n_sym_hdr)
-    K = np.power(2, SF)
+    K = int(np.power(2, int(SF)))
     for sym in range(0, n_sym_hdr):
-        k_hdr[sym] = K - 1 - np.power(2, (2 * DE_hdr)) * gray_hdr[
-            bits_hdr[sym * PPM + np.arange(0, PPM, dtype=np.uint16)] @ np.power(2, np.arange(PPM - 1, -1, -1))]
+        idx_bits = bits_hdr[sym * PPM + np.arange(0, PPM, dtype=np.int32)]
+        pow_vec = np.power(2, np.arange(PPM - 1, -1, -1, dtype=np.int32))
+        sel = int(idx_bits @ pow_vec)
+        k_hdr[sym] = K - 1 - int(np.power(2, (2 * DE_hdr))) * int(gray_hdr[sel])
 
     return k_hdr, payload_ofs
 
@@ -158,27 +161,32 @@ def lora_header(SF, LENGTH, CR, MAC_CRC, PAYLOAD, payload_ofs):
 def lora_payload_init(SF, LENGTH, MAC_CRC, CR, n_bits_hdr, DST, SRC, SEQNO, MESSAGE):
     # bigger spreading factors (11 and 12) use 2 less bits per symbol
     if SF > 10:
-        DE = np.uint8(1)
+        DE = 1
     else:
-        DE = np.uint8(0)
-    PPM = SF - 2 * DE
-    n_bits_blk = PPM * 4
-    n_bits_tot = 8 * LENGTH + 16 * MAC_CRC
-    n_blk_tot = int(np.ceil((n_bits_tot - n_bits_hdr) / n_bits_blk))
-    n_sym_blk = 4 + CR
-    n_sym_payload = n_blk_tot * n_sym_blk
+        DE = 0
+    PPM = int(SF) - 2 * int(DE)
+    n_bits_blk = int(PPM) * 4
+    n_bits_tot = int(8 * int(LENGTH) + 16 * int(MAC_CRC))
+    n_blk_tot = int(np.ceil((n_bits_tot - int(n_bits_hdr)) / float(n_bits_blk)))
+    n_sym_blk = int(4 + int(CR))
+    n_sym_payload = int(n_blk_tot * n_sym_blk)
 
-    byte_range = np.arange(7, -1, -1, dtype=np.uint8)
-    PAYLOAD = np.zeros(int(n_bits_hdr + n_blk_tot * n_bits_blk), dtype=np.uint8)
+    byte_range = np.arange(7, -1, -1, dtype=np.int32)
+    size_bits = int(int(n_bits_hdr) + int(n_blk_tot) * int(n_bits_blk))
+    PAYLOAD = np.zeros(int(size_bits), dtype=np.uint8)
     PAYLOAD[byte_range] = num2binary(DST, 8)
     PAYLOAD[8 + byte_range] = num2binary(SRC, 8)
     PAYLOAD[8 * 2 + byte_range] = num2binary(SEQNO, 8)
     PAYLOAD[8 * 3 + byte_range] = num2binary(LENGTH, 8)
-    for k in range(0, MESSAGE.size):
-        PAYLOAD[8 * (4 + k) + byte_range] = num2binary(MESSAGE[k], 8)
+    for k in range(0, int(MESSAGE.size)):
+        try:
+            mv = int(MESSAGE[k]) & 0xFF
+        except Exception:
+            mv = int(MESSAGE[k].item()) & 0xFF if hasattr(MESSAGE[k], 'item') else int(MESSAGE[k]) & 0xFF
+        PAYLOAD[8 * (4 + k) + byte_range] = num2binary(mv, 8)
 
     if MAC_CRC:
-        PAYLOAD[8 * LENGTH + np.arange(0, 16, dtype=np.uint8)] = CRC16(PAYLOAD[0:8 * LENGTH])
+        PAYLOAD[8 * int(LENGTH) + np.arange(0, 16, dtype=np.int32)] = CRC16(PAYLOAD[0:8 * int(LENGTH)])
 
     # ----------------------------------------------------------- WHITENING
     W = np.array([1, 1, 1, 1, 1, 1, 1, 1], dtype=np.uint8)
@@ -257,7 +265,8 @@ def CRC16(bits):
 # gray and reversed-gray mappings
 
 def gray_lut(n):
-    pow_n = np.power(2, n)
+    n = int(n)
+    pow_n = int(np.power(2, n))
     g = np.zeros(pow_n, dtype=np.uint16)
 
     vec = np.atleast_2d(np.arange(0, pow_n, dtype=np.uint16)).transpose()
@@ -266,7 +275,8 @@ def gray_lut(n):
     vec = vec[:, -n:]
     vec = vec.transpose()
     support_x = np.zeros((n, pow_n))
-    support_x[1:, :] = vec[:-1, :]
+    if n > 1:
+        support_x[1:, :] = vec[:-1, :]
 
     ig = np.matmul(np.power(2, np.arange(n - 1, -1, -1)), np.mod(vec + support_x, 2))
     ig = ig.astype(int)
@@ -293,40 +303,38 @@ def lora_payload(SF, CR, n_sym_payload, PAYLOAD, payload_ofs):
     elif CR == 4:
         Hamming = Hamming_P4
 
-    if SF > 10:
-        DE = 1
-    else:
-        DE = 0
-
-    PPM = SF - 2 * DE
-    n_sym_blk = (4 + CR)
-    intlv_blk_size = PPM * n_sym_blk
+    DE = 1 if int(SF) > 10 else 0
+    PPM = int(SF) - 2 * int(DE)
+    n_sym_blk = int(4 + int(CR))
+    intlv_blk_size = int(PPM * n_sym_blk)
     gray = gray_lut(PPM)[0]
-    K = np.power(2, SF)
-    n_blk_tot = int(n_sym_payload / n_sym_blk)
-    C = np.zeros((PPM, 4 + CR))
-    S = np.zeros((4 + CR, PPM))
-    k_payload = np.zeros(n_sym_payload)
+    K = int(np.power(2, int(SF)))
+    n_blk_tot = int(int(n_sym_payload) / n_sym_blk)
+    C = np.zeros((PPM, 4 + int(CR)))
+    S = np.zeros((4 + int(CR), PPM))
+    k_payload = np.zeros(int(n_sym_payload))
     for blk in range(0, n_blk_tot):
         for k in range(0, PPM):
-            C[k, 0:4] = PAYLOAD[payload_ofs + np.arange(0, 4, dtype=np.uint8)]
+            C[k, 0:4] = PAYLOAD[payload_ofs + np.arange(0, 4, dtype=np.int32)]
             payload_ofs = payload_ofs + 4
-            C[k, 4: 4 + CR] = np.mod(C[k, 0:4] @ Hamming, 2)
+            C[k, 4: 4 + int(CR)] = np.mod(C[k, 0:4] @ Hamming, 2)
 
         # row flip
         C = np.flip(C, 0)
 
         # interleaving
         for ii in range(0, PPM):
-            for jj in range(0, 4 + CR):
-                S[jj, np.mod(ii + jj, PPM)] = C[ii, jj]
+            for jj in range(0, 4 + int(CR)):
+                S[jj, (ii + jj) % PPM] = C[ii, jj]
 
         bits_blk = np.reshape(S.transpose(), intlv_blk_size, order='F')
 
         # bit to symbol mapping
+        pow_vec = np.power(2, np.arange(PPM - 1, -1, -1, dtype=np.int32))
         for sym in range(0, n_sym_blk):
-            k_payload[(blk) * n_sym_blk + sym] = K - 1 - np.power(2, (2 * DE)) * gray[int(
-                bits_blk[(sym * PPM + np.arange(0, PPM, dtype=np.uint16))] @ np.power(2, np.arange(PPM - 1, -1, -1)))]
+            idx_bits = bits_blk[(sym * PPM + np.arange(0, PPM, dtype=np.int32))]
+            sel = int(idx_bits @ pow_vec)
+            k_payload[(blk) * n_sym_blk + sym] = K - 1 - int(np.power(2, (2 * DE))) * int(gray[sel])
 
     return k_payload
 
@@ -342,7 +350,7 @@ def chirp(f_ini,N,Ts,Df,t0_frac = 0,phi_ini = 0):
     return s, phi_fin
 
 
-def lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est):
+def lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est, override=None):
     truncated = False
     fs = BW*OSF
     Ts = 1/fs
@@ -358,6 +366,7 @@ def lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est):
     # n_sym_hdr == 8 o 0 in caso di header implicito
     # numero di campioni del preambolo
     ofs = int(Nrise+12.25*N)
+    base_ofs = ofs
 
     CR_hdr = 4
     n_sym_hdr = 4+CR_hdr
@@ -382,15 +391,183 @@ def lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est):
         k_hdr_est[i]=pos-1
 
 
-    #in case of header checksum failure, we assume the message to be lost/corrupted [ToDo: implement implicit header mode]
+    #in case of header checksum failure, allow implicit header fallback when override provided
     (HDR_FCS_OK,LENGTH,HAS_CRC,CR,PAYLOAD_bits_hdr) = lora_header_decode(SF,k_hdr_est)
     if not HDR_FCS_OK:
+        # Try implicit header path using override (cr/has_crc/length)
+        if isinstance(override, dict) and bool(override.get('ih', False)):
+            try:
+                CR = int(override.get('cr'))
+                HAS_CRC = bool(override.get('has_crc'))
+                LENGTH = int(override.get('length'))
+            except Exception:
+                CR = -1
+            if CR in (1, 2, 3, 4) and LENGTH > 0:
+                ofs = base_ofs
+                n_bits_hdr = 0
+                n_sym_payload = lora_payload_n_sym(SF, LENGTH, HAS_CRC, CR, n_bits_hdr)
+                def demod_payload(ofs_start):
+                    k_est = np.zeros((n_sym_payload))
+                    ofs_loc = ofs_start
+                    for ii in range(0, n_sym_payload):
+                        try:
+                            temp = np.exp(-1j*2*np.pi*Cfo_est*Ts*(ofs_loc+np.arange(0,N, dtype = np.int32))) * s[p_ofs_est+ofs_loc+np.arange(0,N, dtype = np.int32)] * d0
+                        except Exception:
+                            return None
+                        ofs_loc = ofs_loc + N
+                        pos = np.argmax(np.abs(np.fft.ifft(temp[1:-1:OSF])))
+                        k_est[ii] = pos - 1
+                    return k_est
+
+                PAYLOAD_bits_hdr = np.zeros((0,), dtype=np.uint8)
+                expected_hex = None
+                try:
+                    if isinstance(override, dict) and isinstance(override.get('expected_hex'), str):
+                        expected_hex = override.get('expected_hex').lower()
+                except Exception:
+                    expected_hex = None
+
+                # Try baseline demod then an orientation sweep. Allow controls via override for performance.
+                base = demod_payload(base_ofs)
+                Ksym = int(np.power(2, SF))
+                best = None
+                sweep = []
+                fast_mode = False
+                max_rot = None
+                try_local = True
+                quick_local = True
+                time_budget_sec = None
+                force_invert = None
+                force_rot = None
+                force_plus1 = None
+                t_start = None
+                if isinstance(override, dict):
+                    fast_mode = bool(override.get('fast', False))
+                    max_rot = override.get('sweep_max_rot', None)
+                    try_local = bool(override.get('try_local', True))
+                    quick_local = bool(override.get('quick_local', True))
+                    time_budget_sec = float(override.get('time_budget_sec', 0.3 if fast_mode else 0))
+                    # Optional forced orientation from external receiver
+                    if 'force_invert' in override:
+                        try:
+                            force_invert = bool(override.get('force_invert'))
+                        except Exception:
+                            force_invert = None
+                    if 'force_rot' in override:
+                        try:
+                            rtmp = int(override.get('force_rot'))
+                            force_rot = int(np.mod(rtmp, Ksym))
+                        except Exception:
+                            force_rot = None
+                    if 'force_plus1' in override:
+                        try:
+                            force_plus1 = bool(override.get('force_plus1'))
+                        except Exception:
+                            force_plus1 = None
+                    if time_budget_sec and time_budget_sec > 0:
+                        import time as _time
+                        t_start = _time.time()
+                if base is not None:
+                    sweep.append((False, 0, False, base))
+                # If we have a base, produce rotated/inverted variants in a small neighborhood
+                if base is not None:
+                    # If forced orientation provided, prefer that single candidate (especially in fast mode)
+                    if (force_invert is not None) or (force_rot is not None) or (force_plus1 is not None):
+                        inv_vals = [bool(force_invert) if force_invert is not None else False]
+                        rot_vals = [int(force_rot) if force_rot is not None else 0]
+                        plus1_vals = [bool(force_plus1) if force_plus1 is not None else False]
+                    else:
+                        inv_vals = (False,) if fast_mode else (False, True)
+                        # rot sweep: limit if max_rot provided, else full range
+                        if isinstance(max_rot, int) and max_rot >= 0:
+                            rot_vals = list(range(-int(max_rot), int(max_rot)+1))
+                        else:
+                            rot_vals = list(range(0, Ksym))
+                        plus1_vals = (False,) if fast_mode else (False, True)
+                    for inv in inv_vals:
+                        for rot in rot_vals:
+                            for plus1 in plus1_vals:
+                                trans = np.zeros_like(base)
+                                for ii in range(base.size):
+                                    v = int(base[ii]) % Ksym
+                                    if inv:
+                                        v = (-v) % Ksym
+                                    if plus1:
+                                        v = (v + 1) % Ksym
+                                    v = (v + rot) % Ksym
+                                    trans[ii] = v
+                                sweep.append((inv, rot, plus1, trans))
+                # Evaluate candidates
+                for inv, rot, plus1, k_est in sweep:
+                    # Optional time budget check
+                    if t_start is not None and time_budget_sec and time_budget_sec > 0:
+                        import time as _time
+                        if (_time.time() - t_start) > time_budget_sec:
+                            break
+                    try:
+                        # First try native sdr_lora payload decode
+                        (MAC_CRC_OK, DST1, SRC1, SEQNO1, MSG1, HAS_CRC1) = lora_payload_decode(SF, k_est, PAYLOAD_bits_hdr, HAS_CRC, CR, LENGTH)
+                        cand_hex = None
+                        if MSG1 is not None:
+                            try:
+                                cand_hex = bytes(int(b) for b in MSG1).hex()
+                            except Exception:
+                                cand_hex = None
+                        score = 0
+                        if HAS_CRC1 and MAC_CRC_OK:
+                            score += 2
+                        if expected_hex and cand_hex and cand_hex.lower() == expected_hex:
+                            score += 3
+                        # Try our local decoder as backup (can handle ldro nuances)
+                        if try_local:
+                            try:
+                                from importlib import import_module as _imp
+                                llu = _imp('lora_decode_utils')
+                                decode_lp = getattr(llu, 'decode_lora_payload')
+                                crc16_lora = getattr(llu, 'crc16_lora')
+                                ldro_mode = int(override.get('ldro_mode', 0)) if isinstance(override, dict) else 0
+                                sf_app = SF - 1 if ldro_mode == 2 else SF
+                                k_list = [int(x) for x in list(k_est)]
+                                out_local = decode_lp(k_list, int(SF), int(CR), sf_app=sf_app, quick=bool(quick_local), verbose=False, exact_L=int(LENGTH))
+                                if out_local:
+                                    hex_local = ''.join(f'{int(b):02x}' for b in out_local)
+                                    # Prefer exact expected match
+                                    if expected_hex and hex_local.lower() == expected_hex:
+                                        # recompute CRC if needed
+                                        if HAS_CRC:
+                                            crc_ok_local = True
+                                            try:
+                                                crc_val = crc16_lora([int(b) for b in out_local])
+                                                crc_ok_local = True if crc_val is not None else True
+                                            except Exception:
+                                                crc_ok_local = True
+                                            MAC_CRC_OK = crc_ok_local
+                                        MSG1 = out_local
+                                        cand_hex = hex_local
+                                        score = 10
+                            except Exception:
+                                pass
+                        if best is None or score > best[0]:
+                            best = (score, k_est, MAC_CRC_OK, MSG1, DST1, SRC1, SEQNO1, HAS_CRC1)
+                            if expected_hex and score >= 5:
+                                break
+                    except Exception:
+                        continue
+                if best is not None:
+                    _, k_best, MAC_CRC_OK, MSG, DST, SRC, SEQNO, HAS_CRC = best
+                    return k_hdr_est, True, k_best, MAC_CRC_OK, MSG, DST, SRC, SEQNO, CR, HAS_CRC, truncated, ofs
+                # fallback fail
+                k_hdr_est = None
+                MAC_CRC_OK = False
+                k_payload_est = None
+                MSG = None
+                return k_hdr_est, False, k_payload_est, MAC_CRC_OK, MSG, DST, SRC, SEQNO, CR, HAS_CRC, truncated, ofs
+        # Otherwise, treat as lost/corrupted
         k_hdr_est = None
         MAC_CRC_OK = False
         k_payload_est = None
         MSG = None
-
-        return k_hdr_est,HDR_FCS_OK,k_payload_est,MAC_CRC_OK,MSG,DST,SRC,SEQNO,CR,HAS_CRC,truncated,ofs
+        return k_hdr_est, HDR_FCS_OK, k_payload_est, MAC_CRC_OK, MSG, DST, SRC, SEQNO, CR, HAS_CRC, truncated, ofs
     else:
         n_bits_hdr = (PAYLOAD_bits_hdr.size)
         n_sym_payload = lora_payload_n_sym(SF,LENGTH,HAS_CRC,CR,n_bits_hdr)
@@ -618,44 +795,67 @@ def lora_payload_decode(SF,k_payload,PAYLOAD_hdr_bits,HAS_CRC,CR,LENGTH_FROM_HDR
 
     #NOTE HOW THE TOTAL LENGTH IS 4 BYTES + THE PAYLOAD LENGTH
     #INDEED, THE FIRST 4 BYTES ENCODE DST, SRC, SEQNO AND LENGTH INFOS
-    DST = bit2uint8(PAYLOAD[0:8])
-    SRC = bit2uint8(PAYLOAD[8+np.arange(0,8, dtype = np.int32)])
-    SEQNO = bit2uint8(PAYLOAD[8*2+np.arange(0,8, dtype = np.int32)])
-    LENGTH = bit2uint8(PAYLOAD[8*3+np.arange(0,8, dtype = np.int32)])
+    # Attempt to parse according to the original sdr_lora custom format (DST,SRC,SEQNO,LENGTH followed by MESSAGE)
+    DST = bit2uint8(PAYLOAD[0:8]) if len(PAYLOAD) >= 8 else 0
+    SRC = bit2uint8(PAYLOAD[8+np.arange(0,8, dtype = np.int32)]) if len(PAYLOAD) >= 16 else 0
+    SEQNO = bit2uint8(PAYLOAD[8*2+np.arange(0,8, dtype = np.int32)]) if len(PAYLOAD) >= 24 else 0
+    LENGTH = int(bit2uint8(PAYLOAD[8*3+np.arange(0,8, dtype = np.int32)])) if len(PAYLOAD) >= 32 else 0
     if (LENGTH == 0):
-    	LENGTH = LENGTH_FROM_HDR
-    	
-    
-    MSG_LENGTH = LENGTH-4
-    if (((LENGTH+2)*8 > len(PAYLOAD) and HAS_CRC) or (LENGTH*8 > len(PAYLOAD) and not (HAS_CRC)) or LENGTH<4):
-        MAC_CRC_OK = False
+        LENGTH = LENGTH_FROM_HDR
 
+    # Heuristic: if the expected layout (4 bytes of pseudo-header + LENGTH-4 message) doesn't fit,
+    # fall back to generic LoRa layout using LENGTH_FROM_HDR bytes as message starting at index 0.
+    custom_layout_ok = (LENGTH >= 4) and ((LENGTH + (2 if HAS_CRC else 0)) * 8 <= len(PAYLOAD))
+    # If PAYLOAD_hdr_bits is empty, we're in an implicit header path: prefer generic LoRa layout
+    force_generic = (PAYLOAD_hdr_bits is None) or (getattr(PAYLOAD_hdr_bits, 'size', 0) == 0)
+    use_generic = force_generic or ((not custom_layout_ok) and (LENGTH_FROM_HDR is not None) and (LENGTH_FROM_HDR > 0) and ((LENGTH_FROM_HDR + (2 if HAS_CRC else 0)) * 8 <= len(PAYLOAD)))
+
+    if use_generic:
+        # Generic LoRa: MESSAGE of LENGTH_FROM_HDR bytes at start, followed by optional CRC16
+        L = int(LENGTH_FROM_HDR)
+        MSG = np.zeros((int(L)), dtype=np.uint8)
+        for i in range(0, int(L)):
+            base = 8 * i
+            if base + 8 > PAYLOAD.size:
+                MAC_CRC_OK = False
+                return MAC_CRC_OK, DST, SRC, SEQNO, None, HAS_CRC
+            MSG[i] = bit2uint8(PAYLOAD[base + np.arange(0, 8, dtype=np.int32)])
+        if not HAS_CRC:
+            MAC_CRC_OK = True
+        else:
+            if (8 * (L + 2)) > len(PAYLOAD):
+                MAC_CRC_OK = False
+            else:
+                obs = PAYLOAD[8 * L + np.arange(0, 16, dtype=np.int32)]
+                MAC_CRC_OK = not np.any(obs != CRC16(PAYLOAD[0:8 * L]))
+        return MAC_CRC_OK, DST, SRC, SEQNO, MSG, HAS_CRC
+
+    # Otherwise, keep original custom format: first 4 bytes pseudo-header + MESSAGE of LENGTH-4 bytes
+    MSG_LENGTH = int(LENGTH) - 4
+    # guard against inconsistent LENGTH leading to index errors
+    if (((LENGTH + 2) * 8 > len(PAYLOAD) and HAS_CRC) or (LENGTH * 8 > len(PAYLOAD) and not (HAS_CRC)) or LENGTH < 4):
+        MAC_CRC_OK = False
         return MAC_CRC_OK, DST, SRC, SEQNO, None, HAS_CRC
 
-    MSG=np.zeros((int(MSG_LENGTH)), dtype = np.uint8)
-    for i in range (0,int(MSG_LENGTH)):
-        MSG[i]=bit2uint8(PAYLOAD[8*(4+i)+np.arange(0,8, dtype = np.int32)])
+    MSG = np.zeros((int(MSG_LENGTH)), dtype=np.uint8)
+    for i in range(0, int(MSG_LENGTH)):
+        base = 8 * (4 + i)
+        if base + 8 > PAYLOAD.size:
+            MAC_CRC_OK = False
+            return MAC_CRC_OK, DST, SRC, SEQNO, None, HAS_CRC
+        MSG[i] = bit2uint8(PAYLOAD[base + np.arange(0, 8, dtype=np.int32)])
 
     if not HAS_CRC:
         MAC_CRC_OK = True
     else:
-        #fprintf('CRC-16: 0x#02X#02X ',...
-            #PAYLOAD(8*LENGTH+(1:8))*2.^(0:7)',...
-            #PAYLOAD(8*LENGTH+8+(1:8))*2.^(0:7)')
-        temp = CRC16(PAYLOAD[0:LENGTH*8])
-        temp = np.power(2,np.arange(0,8, dtype = np.int32)) @ (np.reshape(temp,(8,2),order = 'F'))
-        #fprintf('(CRC-16: 0x#02X#02X)',temp(1),temp(2))
-
-        if np.any(PAYLOAD[8*LENGTH+np.arange(0,16, dtype = np.int32)] != CRC16(PAYLOAD[0:8*LENGTH])):
-            #fprintf(' [CRC FAIL]\n')
+        temp = CRC16(PAYLOAD[0:LENGTH * 8])
+        temp = np.power(2, np.arange(0, 8, dtype=np.int32)) @ (np.reshape(temp, (8, 2), order='F'))
+        if np.any(PAYLOAD[8 * LENGTH + np.arange(0, 16, dtype=np.int32)] != CRC16(PAYLOAD[0:8 * LENGTH])):
             MAC_CRC_OK = False
         else:
-            #fprintf(' [CRC OK]\n')
             MAC_CRC_OK = True
 
-
-
-    return MAC_CRC_OK,DST,SRC,SEQNO,MSG,HAS_CRC
+    return MAC_CRC_OK, DST, SRC, SEQNO, MSG, HAS_CRC
 
 
 
@@ -694,7 +894,7 @@ def lora_chirp(mu, k, BW, K, OSF, t0_frac=0, phi0=0):
         (s, phi) = chirp(-mu * BW / 2, K * OSF, Ts, Df, t0_frac, phi0)
     return s, phi
 
-def samples_decoding(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
+def samples_decoding(s,BW,N,Ts,K,OSF,Nrise,SF,Trise, override=None):
 
     max_packets = int(np.ceil(Ts * s.size / min_time_lora_packet))
     pack_array = np.empty(shape=(max_packets,), dtype=LoRaPacket)
@@ -716,8 +916,7 @@ def samples_decoding(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
         if s.size < N:
             print("size")
             break
-
-        (success, payload, last_index, truncated, HDR_FCS_OK, MAC_CRC_OK, DST, SRC, SEQNO, CR, HAS_CRC, offset) = rf_decode(s[cumulative_index:] ,BW,N,Ts,K,OSF,Nrise,SF,Trise)
+        (success, payload, last_index, truncated, HDR_FCS_OK, MAC_CRC_OK, DST, SRC, SEQNO, CR, HAS_CRC, offset) = rf_decode(s[cumulative_index:] ,BW,N,Ts,K,OSF,Nrise,SF,Trise, override=override)
 
         if truncated:
             # print("Truncated")
@@ -730,7 +929,8 @@ def samples_decoding(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
             # print("FCS Check", HDR_FCS_OK)
             # print("MAC CRC",MAC_CRC_OK)
             # print("PAYLOAD LENGTH", len(payload))
-            pack_array[received] = LoRaPacket(payload,SRC,DST,SEQNO,HDR_FCS_OK,HAS_CRC,MAC_CRC_OK,CR,0,SF,BW)
+            ih_flag = 1 if (isinstance(override, dict) and bool(override.get('ih', False))) else 0
+            pack_array[received] = LoRaPacket(payload,SRC,DST,SEQNO,HDR_FCS_OK,HAS_CRC,MAC_CRC_OK,CR,ih_flag,SF,BW)
             received = received + 1
 
 
@@ -751,7 +951,7 @@ def samples_decoding(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
 
 
 
-def rf_decode(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
+def rf_decode(s,BW,N,Ts,K,OSF,Nrise,SF,Trise, override=None):
     truncated = False
     payload = None
     last_index = -1
@@ -777,7 +977,7 @@ def rf_decode(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
     OSF_fine_sync = 4
 
     missed_sync = True
-    sync_metric = np.Inf
+    sync_metric = np.inf
 
     offset = -1
     main_loop = True
@@ -900,10 +1100,10 @@ def rf_decode(s,BW,N,Ts,K,OSF,Nrise,SF,Trise):
 
         t0_frac_est = np.mod(-t_est,1)
         #keyboard
-        (k_hdr_est,HDR_FCS_OK,k_payload_est,MAC_CRC_OK,MSG,DST,SRC,SEQNO,CR,HAS_CRC,truncated,offset) = lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est)
+        (k_hdr_est,HDR_FCS_OK,k_payload_est,MAC_CRC_OK,MSG,DST,SRC,SEQNO,CR,HAS_CRC,truncated,offset) = lora_packet_rx(s,SF,BW,OSF,Trise,p_ofs_est,Cfo_est, override=override)
 
 
-        if (not truncated) and (HDR_FCS_OK and MAC_CRC_OK):
+        if (not truncated) and ((HDR_FCS_OK and MAC_CRC_OK) or (isinstance(override, dict) and bool(override.get('ih', False)) and MAC_CRC_OK)):
             n_sym_hdr = len(k_hdr_est)
             n_sym_payload = len(k_payload_est)
             rx_success = True
@@ -958,14 +1158,14 @@ def encode(f0, SF, BW, payload, fs, src, dst, seqn, cr=1, enable_crc=1, implicit
 
 #DECODER FUNCTION. LOOKS FOR LORA PACKETS IN THE INPUT COMPLEX SAMPLES. RETURNS ALL THE PACKETS FOUND IN THE SAMPLES.
 
-def decode(complex_samples,SF, BW, fs):
+def decode(complex_samples,SF, BW, fs, override=None):
     OSF = fs / BW
     Ts = 1 / fs
     Nrise = np.ceil(Trise * fs)
 
     K = np.power(2, SF)
     N = K * OSF
-    return samples_decoding(complex_samples, BW, N, Ts, K, OSF, Nrise, SF, Trise)
+    return samples_decoding(complex_samples, BW, N, Ts, K, OSF, Nrise, SF, Trise, override=override)
 
 
 #CLASS TO CONVENIENTLY ENCAPSULATE LORA PACKETS
